@@ -26,9 +26,10 @@ from discord.ext import commands, tasks
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+from sys import argv
 
 #load_dotenv()
-TOKEN = "NjkzMTg4NzcxOTEwMzg1NzY0.Xn6F7g.FvIBCzO8UWXvKycKqNXS_vvVCLQ"#os.getenv('DISCORD_TOKEN')\
+TOKEN = argv[1]#os.getenv('DISCORD_TOKEN')\
 
 client= commands.Bot(command_prefix=['.','cat','<@693188771910385764>'], case_insensitive=True, help_command=None)
 
@@ -103,28 +104,28 @@ class ReactionQueue:
         
 
         if len(self.queue) > 2:# if already multiple items in the queue, don't imediately excecute a new edit, instead let the async while loop handle it
-            print("Queue > 2 now")
+            ##print("Queue > 2 now")
             return
 
         elif len(self.queue) == 1:
             
             if time.time() > self.lastEdit+self.editInterval:
-                print("Queue went from 0 -> 1 -> 0, time = "+str(self.queue[0][0]))
+                ##print("Queue went from 0 -> 1 -> 0, time = "+str(self.queue[0][0]))
                 await self.editOldest()
                 self.lastEdit = time.time()
             else:
                 await asyncio.sleep((time.time()-self.lastEdit)/1000)
                 await self.editOldest()
                 self.lastEdit = time.time()
-                print("Waited a short time to empty queue ("+str(len(self.queue))+")")
+                ##print("Waited a short time to empty queue ("+str(len(self.queue))+")")
 
         elif len(self.queue) == 2:
-            print("Queue = 2 now")
+            ##print("Queue = 2 now")
             while len(self.queue) > 0:
                 await self.editOldest()
                 self.lastEdit = time.time()
                 await asyncio.sleep(self.editInterval/1000)
-                print("Emptying queue ("+str(len(self.queue))+")")
+                ##print("Emptying queue ("+str(len(self.queue))+")")
 
 
     async def editOldest(self):
