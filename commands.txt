@@ -1,0 +1,18 @@
+__General__
+**poll** "[question]" [option_1] "[option 2]" ... [option_N] - *Creates a 1-minute live poll*
+
+__Quote__
+**addQuote** [text] - *Adds a string of text as a quote*
+**quoteThat** - *Adds the last message in the current channel as a quote*
+**quoteID** [message_ID] - *Adds a quote from a message ID*
+**deleteQuote** [number] - *Deletes a quote*
+**randomQoute** - *Shows a random quote in this server*
+**quotes** - *Shows all quotes in this server*
+**by** [user] - *Shows quotes by a specific user in this server*
+
+__Bot__
+**ping** - *Shows bot latency in milliseconds*
+**play** [game] - *Changes the game status of the bot*
+**status** [status] - *Changes the status of the bot: `online`, `idle`, `dnd`*
+
+*Note: case insensitive*
