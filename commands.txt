@@ -1,5 +1,6 @@
 __General__
 **poll** "[question]" [option_1] "[option 2]" ... [option_N] - *Creates a 1-minute live poll*
+**timedPoll** [duration] "[question]" [option_1] ... [option_N] - *Creates a live poll with a custom timer specified in __*minutes*__
 
 __Quote__
 **addQuote** [text] - *Adds a string of text as a quote*

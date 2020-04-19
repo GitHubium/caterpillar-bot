@@ -1,35 +1,23 @@
-
-
-
-
-'''
-
-TODO
-
-
-- Add polls graph at the end of 10 minutes
-- .endpoll command to end all polls in current channel
-- use https://pythonspot.com/matplotlib-pie-chart/
-- Can't be more than 500 polls at once
-- do @commands.cooldown(1, 30, commands.BucketType.user) for quotethat and addquote
-
-
-'''
-
-
+import discord
+from discord.ext import commands, tasks
 import random
 import asyncio
 import json
-import time
-import discord
-from discord.ext import commands, tasks
+from datetime import timedelta, datetime
 import matplotlib.pyplot as plt
-import numpy as np
+from textwrap import wrap
 import os
-from sys import argv
 
-#load_dotenv()
-TOKEN = argv[1]#os.getenv('DISCORD_TOKEN')\
+if os.path.exists("secret.json"):
+   with open("secret.json", 'r') as file:
+       try:
+           TOKEN = json.load(file)['entity']
+       except:
+           print("Error opening secret.json file, aborted")
+           quit()
+else:
+    from sys import argv
+    TOKEN = argv[1]
 
 client= commands.Bot(command_prefix=['.','cat','<@693188771910385764>'], case_insensitive=True, help_command=None)
 
@@ -47,7 +35,7 @@ emptyjson = """
 pollEmojis = ["1⃣", "2⃣", "3⃣", "4⃣", "5⃣", "6⃣", "7⃣", "8⃣", "9⃣", "0⃣", "🇦", "🇧", "🇨", "🇩", "🇪", "🇫", "🇬", "🇭", "🇮", "🇯"]
 activePolls = [
 #{
-#     "timestamp": 999999999999
+#     "expires": 999999999999
 #     "guild": 1234567890,
 #     "channel": 1234567890,
 #     "message": 1234567890
@@ -69,9 +57,12 @@ pctI = -1
 
 class ReactionQueue:
     def __init__(self):
-        self.queue = []#[timestamp, guild_id, channel_id, message_id, choices]
-        self.lastEdit = 0
-        self.editInterval = 1000# in ms
+        self.queue = []#[time_reacted, guild_id, channel_id, message_id, choices, time_expires]
+        self.lastEdit = datetime.now()
+        self.editInterval = timedelta(seconds=1.5)
+
+    def getRandomColor(self):
+        return discord.Color(random.randint(0, 16777214))
 
     async def alert(self, payload):
         user_id = payload.user_id
@@ -83,15 +74,15 @@ class ReactionQueue:
         guild_id = payload.guild_id
 
 
-        choices = next((x for x in activePolls if \
+        ap = next((x for x in activePolls if \
             message_id == x["message"] and channel_id == x["channel"] and guild_id == x["guild"]), None)# if alerted (reacted) message is a poll
-        if choices == None:
+        if ap == None:
             return
-        choices = choices["reactions"]
-
+        choices = ap["reactions"]
+        expires = ap["expires"]
 
         # Don't add the same scan request if it's already in the queue
-        now = time.time()
+        now = datetime.now()
         found = False
         for item in self.queue:
             if item[3] == message_id and item[1] == guild_id and item[2] == channel_id and now - item[0] > self.editInterval:# ignore new request to same poll earlier (it will get checked anyways)
@@ -100,7 +91,7 @@ class ReactionQueue:
         if found:
             return
         else:
-            self.queue.append([now, guild_id, channel_id, message_id, choices])
+            self.queue.append([now, guild_id, channel_id, message_id, choices, expires])
         
 
         if len(self.queue) > 2:# if already multiple items in the queue, don't imediately excecute a new edit, instead let the async while loop handle it
@@ -109,31 +100,33 @@ class ReactionQueue:
 
         elif len(self.queue) == 1:
             
-            if time.time() > self.lastEdit+self.editInterval:
+            if now > self.lastEdit+self.editInterval:
                 ##print("Queue went from 0 -> 1 -> 0, time = "+str(self.queue[0][0]))
                 await self.editOldest()
-                self.lastEdit = time.time()
+                self.lastEdit = now
             else:
-                await asyncio.sleep((time.time()-self.lastEdit)/1000)
+                await asyncio.sleep((now-self.lastEdit).total_seconds()/1000)
                 await self.editOldest()
-                self.lastEdit = time.time()
+                self.lastEdit = now
                 ##print("Waited a short time to empty queue ("+str(len(self.queue))+")")
 
         elif len(self.queue) == 2:
             ##print("Queue = 2 now")
             while len(self.queue) > 0:
                 await self.editOldest()
-                self.lastEdit = time.time()
-                await asyncio.sleep(self.editInterval/1000)
+                self.lastEdit = now
+                await asyncio.sleep(self.editInterval.total_seconds()/1000)
                 ##print("Emptying queue ("+str(len(self.queue))+")")
 
 
     async def editOldest(self):
+        now = datetime.now()
         oldest = self.queue.pop(0)
         guild_id = oldest[1]
         channel_id = oldest[2]
         message_id = oldest[3]
         choices = oldest[4]
+        expires = oldest[5]
 
         channel = client.get_guild(guild_id).get_channel(channel_id)
         message = await channel.fetch_message(message_id)
@@ -150,14 +143,15 @@ class ReactionQueue:
             description += "\n**"+str(pollEmojis[i])+"** - "+entity["option"]+" ("+str(entity["count"])+")" 
  
         title = message.embeds[0].title 
-
+        print('ex'+str(expires))
         embed = discord.Embed(
             title = title,
             description = description,
-            color=discord.Color.blurple()
+            color=self.getRandomColor(),
+            timestamp=datetime.fromtimestamp(expires)
         ) 
+        embed.set_footer(text="Poll ends", icon_url="https://cdn.discordapp.com/avatars/693188771910385764/c1da0eab65bc2cc81d64dc7f5845b1ff.png")
         await message.edit(embed=embed)
-
 rQueue = ReactionQueue()
 
 def exportPiChart(percentages, labels, title, file_name):
@@ -169,9 +163,9 @@ def exportPiChart(percentages, labels, title, file_name):
     AXIS = [-0.03, -0.09, 1.06, 1.06]
     fracs = percentages
     labels = labels
-    TITLE = title
+    TITLE = "\n".join(wrap(title, 30))
     # Make a square figure and axes
-    plt.figure(1, figsize=(6, 6))
+    plt.figure(1, figsize=(3, 3))
     global pctI
     pctI = -1
     def func(pct):
@@ -182,7 +176,7 @@ def exportPiChart(percentages, labels, title, file_name):
         return "{:.1f}%\n{:.16}".format(pct, labels[pctI])
     ax = plt.axes(AXIS)
     ax.pie(percentages, autopct=lambda pct:func(pct), textprops={'color':"w"})
-    plt.title(TITLE, bbox={'facecolor': '0.8', 'pad': 5}, y=0.95)
+    plt.title(TITLE, bbox={'facecolor': '0.8', 'pad': 5}, y=0.93-0.05*TITLE.count('\n'))
     plt.savefig(UPLOAD_DIR+'/'+file_name, transparent=True)
 
 def writeDB(jsonData, filename):
@@ -212,7 +206,6 @@ async def addquote(ctx, *, newQuote):
     addQuote(parsed_json, ctx.message.author.id, newQuote, ctx.message.created_at.date()) # Update local variable holding json
     writeDB(parsed_json, ctx.guild.id) # Rewrite to file
     await ctx.send("Quote added: \""+newQuote+"\"")
-
 
 @client.command()
 @commands.cooldown(1, 30, commands.BucketType.user)
@@ -289,7 +282,6 @@ async def deletequote(ctx, ind):
     writeDB(parsed_json, ctx.guild.id) # Rewrite to file
     await ctx.send("Quote **`{}`** deleted".format(ind))
 
-
 @client.command()
 async def help(ctx):
     with open('commands.txt', 'r') as file:
@@ -344,21 +336,40 @@ async def invite(ctx):
     
     await ctx.send("https://discordapp.com/api/oauth2/authorize?client_id=693188771910385764&permissions=8&scope=bot")
 
-   
 @client.command()
-async def poll(ctx, question, *args):
+async def timedPoll(ctx, minutes, question, *args):
+
+    if len(args) < 2:
+        await ctx.send("Error: not enough parameters")
+        return
+    if len(args) > 20:
+        args = args[:20]
+
+    try:
+        minutes = float(minutes)
+    except Exception:
+        await ctx.send("Error: wrong format for the [duration] parameter")
+        return
+
+    if minutes < 0 or minutes > 60*24:
+        await ctx.send("Error: poll duration must be between 1 and 1440 minutes (24 hours)")
+        return
+    
     description = "\n"
     i = 0
     for a in args:
-        description += "\n**"+str(pollEmojis[i])+"** - "+a+" (0)"
+        description += "\n**"+str(pollEmojis[i])+"** - "+str(a)+" (0)"
         i += 1
+
+    futureTime = datetime.now()+timedelta(minutes=minutes)
 
     embed = discord.Embed(
         title=question,
         description=description,
-        color=discord.Color.default()
+        color=discord.Color.default(),
+        timestamp=futureTime,
     ) 
-
+    embed.set_footer(text="Poll ends", icon_url="https://cdn.discordapp.com/avatars/693188771910385764/c1da0eab65bc2cc81d64dc7f5845b1ff.png")
 
     embededMsg = await ctx.send(embed=embed)
     choices = {}
@@ -371,14 +382,18 @@ async def poll(ctx, question, *args):
         }
         i += 1
     activePolls.append({
-        "timestamp": time.time(),
+        "expires": futureTime.timestamp(),
         "guild": embededMsg.guild.id,
         "channel": embededMsg.channel.id,
         "message": embededMsg.id,
         "reactions": choices
     })
 
-# This is called once the client has connected, this function checks if there is a .json file for each currently disconnected server, if it doesnt exist, it creates one.
+@client.command()
+async def poll(ctx, question, *args):
+    await timedPoll(ctx, 1, question, *args)
+
+
 @client.event
 async def on_ready():
     print("Logged in as")
@@ -403,7 +418,7 @@ async def on_ready():
     await client.change_presence(status=discord.Status.online, activity=discord.Game('.help'))
 
     params = {
-          "font.size": "18",
+          "font.size": "10",
           "font.weight": "bold",
           "font.family": "verdana"}
     plt.rcParams.update(params)
@@ -422,11 +437,14 @@ async def on_raw_reaction_remove(payload):
 
 @tasks.loop(seconds=15)
 async def deleteOldPolls():
-    now = time.time()
+    #print(activePolls)
+    print('hello?')
+    now = datetime.now()
     for i in range(len(activePolls)-1, -1, -1):
-        if now > activePolls[i]["timestamp"] + 60:# 10 seconds
+        print(now.timestamp() , activePolls[i]["expires"])
+        if now.timestamp() > activePolls[i]["expires"]:
+            
             thePoll = activePolls.pop(i)
-           
             channel = client.get_guild(thePoll["guild"]).get_channel(thePoll["channel"])
             message = await channel.fetch_message(thePoll["message"])
             title = message.embeds[0].title
@@ -434,12 +452,16 @@ async def deleteOldPolls():
             choices = thePoll["reactions"]
             percentages = []
             labels = []
+            significantIndeces = []
             
             for i in range(len(choices)):
                 entity = choices[i]
                 reaction = next((x for x in reactions if pollEmojis.index(str(x)) == i), None)
                 if reaction == None:#other reactions
                     continue
+                if reaction.count == 1:#if no reactions from people
+                    continue
+                significantIndeces.append(i)
                 percentages.append(reaction.count-1)
                 labels.append(entity["option"])
     
@@ -453,20 +475,23 @@ async def deleteOldPolls():
                 )
                 await channel.send(embed=embed)
             else:
-
+                
                 winner = None
                 isTie = False
                 largest = 0
-                for i in range(len(percentages)):
-                    if percentages[i] > largest:
-                        largest = percentages[i]
+                winningPercent = 0
+                for i in significantIndeces:
+                    val = choices[i]['count']
+                    if val > largest:
+                        largest = val
                         winner = i
+                        winningPercent = percentages[i]
                         isTie = False
-                    elif percentages[i] == largest:
+                    elif val == largest:
                         isTie = True
                     percentages[i] = round(100*percentages[i]/total)
 
-
+                print(winner, isTie, largest, percentages, winningPercent, choices, choices[winner], choices[winner]['option'])
                 
                 fileName = "pie.png"
                 exportPiChart(percentages, labels, title, fileName)
@@ -474,7 +499,7 @@ async def deleteOldPolls():
                 if isTie:
                     winnerText = "Tie"
                 else:
-                    winnerText = "Winner: "+choices[winner]["option"]+" ("+(choices[winner]["count"]-1)+" Votes)"
+                    winnerText = "Winner: "+str(choices[winner]["option"])+" ("+str(choices[winner]["count"])+" Votes)"
                 embed = discord.Embed(
                     title=winnerText,
                     color=discord.Color.green(),
@@ -485,7 +510,7 @@ async def deleteOldPolls():
 
                 await channel.send(embed=embed, file=file)
                 
-@client.command()
+@client.command(aliases=["stop"])
 @commands.is_owner()
 async def shutdown(ctx):
     await ctx.bot.logout()
